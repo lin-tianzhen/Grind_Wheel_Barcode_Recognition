@@ -7,11 +7,6 @@
   3. 几何矫正: Hough 近垂直线估计条码倾角 → 旋转矫正
   4. EAN-13 解码: 多扫描线采样 → 95 模块匹配 → L/G/R 码表查表 → 校验位验证 → 投票
   5. 兜底策略: CLAHE/反相/强锐化/Wiener 反卷积变体 + 多角度搜索
-
-用法:
-  python barcode_recognize.py
-  python barcode_recognize.py --image data/raw/RegulaImg.bmp
-  python barcode_recognize.py --debug
 """
 from __future__ import annotations
 
