@@ -49,17 +49,6 @@ VAL_PER_IMAGE = 60               # number of synthetic validation scenes
 MAX_SIDE_LOCATE = 1280           # long side used by the traditional locator
 DEEP_INFER_SIDE = 1024           # long side fed to the U-Net
 
-# ---------------------------------------------------------------------------
-# Deep model / training
-# ---------------------------------------------------------------------------
-BASE_CHANNELS = 16
-EPOCHS = 45
-BATCH_SIZE = 8
-LEARNING_RATE = 1.5e-3
-WEIGHT_DECAY = 1e-4
-POS_WEIGHT = 2.0
-NUM_WORKERS = 0
-DEVICE = "auto"                   # auto -> mps, cuda, or cpu
 
 MODEL_PATH = MODEL_DIR / "unet_barcode.pt"
 TRAIN_HISTORY = MODEL_DIR / "train_history.json"
