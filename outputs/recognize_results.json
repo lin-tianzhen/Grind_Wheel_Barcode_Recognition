@@ -1,96 +1,87 @@
 [
   {
-    "image_name": "BarAreaRoted.bmp",
+    "image_name": "image1.png",
     "method": "模式识别(结构张量+EAN-13扫描线解码)",
-    "text": "4014855012527",
-    "ok": true,
-    "checksum_ok": true,
-    "confidence": 0.95,
+    "text": "",
+    "ok": false,
+    "checksum_ok": false,
+    "confidence": 0.0,
     "bbox": [
-      0.0,
-      0.0,
-      528.0,
-      276.0
+      287.0,
+      406.0,
+      308.0,
+      432.0
     ],
-    "decode_method": "zxing",
-    "elapsed_ms": 117.99039994366467,
+    "decode_method": "none",
+    "elapsed_ms": 2140.079999982845,
     "num_candidates": 8
   },
   {
-    "image_name": "BQ-1(1)(标签折叠变形).bmp",
+    "image_name": "image2.png",
     "method": "模式识别(结构张量+EAN-13扫描线解码)",
     "text": "",
     "ok": false,
     "checksum_ok": false,
     "confidence": 0.0,
-    "bbox": [],
-    "decode_method": "none",
-    "elapsed_ms": 0.0,
-    "num_candidates": 0
-  },
-  {
-    "image_name": "BQ-1(2)(标签折叠变形).bmp",
-    "method": "模式识别(结构张量+EAN-13扫描线解码)",
-    "text": "",
-    "ok": false,
-    "checksum_ok": false,
-    "confidence": 0.0,
-    "bbox": [],
-    "decode_method": "none",
-    "elapsed_ms": 0.0,
-    "num_candidates": 0
-  },
-  {
-    "image_name": "BQ-1(3)(标签折叠变形).bmp",
-    "method": "模式识别(结构张量+EAN-13扫描线解码)",
-    "text": "",
-    "ok": false,
-    "checksum_ok": false,
-    "confidence": 0.0,
-    "bbox": [],
-    "decode_method": "none",
-    "elapsed_ms": 0.0,
-    "num_candidates": 0
-  },
-  {
-    "image_name": "BQ-1(4)(标签折叠变形).bmp",
-    "method": "模式识别(结构张量+EAN-13扫描线解码)",
-    "text": "",
-    "ok": false,
-    "checksum_ok": false,
-    "confidence": 0.0,
-    "bbox": [],
-    "decode_method": "none",
-    "elapsed_ms": 0.0,
-    "num_candidates": 0
-  },
-  {
-    "image_name": "NL-4(2)(边缘突出).bmp",
-    "method": "模式识别(结构张量+EAN-13扫描线解码)",
-    "text": "",
-    "ok": false,
-    "checksum_ok": false,
-    "confidence": 0.0,
-    "bbox": [],
-    "decode_method": "none",
-    "elapsed_ms": 0.0,
-    "num_candidates": 0
-  },
-  {
-    "image_name": "RegulaImg.bmp",
-    "method": "模式识别(结构张量+EAN-13扫描线解码)",
-    "text": "4014855012527",
-    "ok": true,
-    "checksum_ok": true,
-    "confidence": 0.95,
     "bbox": [
-      1225.0,
-      2462.0,
-      1679.0,
-      2747.0
+      510.0,
+      59.0,
+      649.0,
+      93.0
     ],
-    "decode_method": "zxing",
-    "elapsed_ms": 222.03979990445077,
+    "decode_method": "none",
+    "elapsed_ms": 1686.2478000111878,
+    "num_candidates": 8
+  },
+  {
+    "image_name": "image3.png",
+    "method": "模式识别(结构张量+EAN-13扫描线解码)",
+    "text": "",
+    "ok": false,
+    "checksum_ok": false,
+    "confidence": 0.0,
+    "bbox": [
+      186.0,
+      140.0,
+      579.0,
+      190.0
+    ],
+    "decode_method": "none",
+    "elapsed_ms": 2172.5479000015184,
+    "num_candidates": 8
+  },
+  {
+    "image_name": "image4.png",
+    "method": "模式识别(结构张量+EAN-13扫描线解码)",
+    "text": "",
+    "ok": false,
+    "checksum_ok": false,
+    "confidence": 0.0,
+    "bbox": [
+      43.0,
+      193.0,
+      73.0,
+      202.0
+    ],
+    "decode_method": "none",
+    "elapsed_ms": 2296.652899996843,
+    "num_candidates": 8
+  },
+  {
+    "image_name": "image5.png",
+    "method": "模式识别(结构张量+EAN-13扫描线解码)",
+    "text": "",
+    "ok": false,
+    "checksum_ok": false,
+    "confidence": 0.0,
+    "bbox": [
+      231.0,
+      126.0,
+      497.0,
+      160.0
+    ],
+    "decode_method": "none",
+    "elapsed_ms": 3147.880000004079,
     "num_candidates": 8
   }
 ]

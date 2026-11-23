@@ -3,10 +3,11 @@
 
 技术路线:
   1. 预处理: 高斯去噪 + CLAHE 自适应直方图均衡化
-  2. 条码定位: Sobel 梯度 → 结构张量(边缘能量 + 方向一致性) → 阈值化 → 形态学 → 连通域
+  2. 一维条码定位: Sobel 梯度 → 结构张量(边缘能量 + 方向一致性) → 阈值化 → 形态学 → 连通域
   3. 几何矫正: Hough 近垂直线估计条码倾角 → 旋转矫正
   4. EAN-13 解码: 多扫描线采样 → 95 模块匹配 → L/G/R 码表查表 → 校验位验证 → 投票
-  5. 兜底策略: CLAHE/反相/强锐化/Wiener 反卷积变体 + 多角度搜索
+  5. 2D 矩阵码解码: Data Matrix / QR / Aztec 等, 多尺度 + 多二值化 + 旋转扫描
+  6. 兜底策略: CLAHE/反相/强锐化/Wiener 反卷积变体 + 多角度搜索
 """
 from __future__ import annotations
 
@@ -24,7 +25,7 @@ import numpy as np
 # 全局配置
 # ============================================================================
 PROJECT_ROOT = Path(__file__).resolve().parent
-RAW_DIR = PROJECT_ROOT / "data" / "raw"
+RAW_DIR = PROJECT_ROOT / "data" / "test"
 OUTPUT_DIR = PROJECT_ROOT / "outputs"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -499,6 +500,7 @@ def locate_barcode_proposals(gray: np.ndarray,
 # 完整识别流程
 # ============================================================================
 def _try_zxing(gray: np.ndarray) -> Optional[DecodeResult]:
+    """EAN-13 一维条码兜底解码(zxingcpp)。"""
     try:
         import zxingcpp
     except ImportError:
@@ -518,13 +520,8 @@ def _try_zxing(gray: np.ndarray) -> Optional[DecodeResult]:
                 img = v
             try:
                 results = zxingcpp.read_barcodes(
-                    img, try_harder=True, try_rotate=True,
+                    img, try_rotate=True, try_invert=True,
                     formats=zxingcpp.BarcodeFormat.EAN13)
-            except TypeError:
-                try:
-                    results = zxingcpp.read_barcodes(img)
-                except Exception:
-                    results = []
             except Exception:
                 results = []
             for r in results:
@@ -533,6 +530,90 @@ def _try_zxing(gray: np.ndarray) -> Optional[DecodeResult]:
                     return DecodeResult(text=text, ok=True, method="zxing",
                                         confidence=0.95, checksum_ok=True)
     return None
+
+
+# 2D 矩阵码格式集合: 工业零件上常见 Data Matrix / QR / Aztec / PDF417 / MaxiCode
+def _matrix_formats():
+    import zxingcpp
+    return (
+        zxingcpp.BarcodeFormat.DataMatrix,
+        zxingcpp.BarcodeFormat.QRCode,
+        zxingcpp.BarcodeFormat.MicroQRCode,
+        zxingcpp.BarcodeFormat.Aztec,
+        zxingcpp.BarcodeFormat.PDF417,
+        zxingcpp.BarcodeFormat.MaxiCode,
+    )
+
+
+def _try_zxing_matrix(gray: np.ndarray) -> Optional[DecodeResult]:
+    """2D 矩阵码兜底解码: 多尺度 + 多种二值化策略 + 旋转/反相搜索。"""
+    try:
+        import zxingcpp
+    except ImportError:
+        return None
+    g = np.asarray(gray)
+    if g.ndim == 3:
+        g = cv2.cvtColor(g, cv2.COLOR_BGR2GRAY)
+    h, w = g.shape[:2]
+    formats = _matrix_formats()
+    # 2D 码模块通常较小, 需要放大提高采样精度; 限制最长边避免耗时失控
+    max_side = 2000
+    scales = [1.0]
+    s = 2.0
+    while s * max(h, w) <= max_side and len(scales) < 6:
+        scales.append(s)
+        s += 1.0
+    for v in (g, cv2.bitwise_not(g)):
+        for scale in scales:
+            if scale > 1.0:
+                img = cv2.resize(v, None, fx=scale, fy=scale,
+                                 interpolation=cv2.INTER_CUBIC)
+            else:
+                img = v
+            for binarizer in (zxingcpp.Binarizer.LocalAverage,
+                              zxingcpp.Binarizer.GlobalHistogram):
+                try:
+                    results = zxingcpp.read_barcodes(
+                        img, formats=formats, try_rotate=True, try_invert=True,
+                        binarizer=binarizer)
+                except Exception:
+                    results = []
+                for r in results:
+                    text = str(r.text).strip()
+                    if text:
+                        return DecodeResult(text=text, ok=True,
+                                            method="zxing-2d",
+                                            confidence=0.9,
+                                            checksum_ok=True)
+    return None
+
+
+def _try_2d_rotated(gray: np.ndarray) -> Optional[DecodeResult]:
+    """对整图做多角度旋转扫描后再次尝试 2D 解码。
+
+    部分 2D 码被印在砂轮曲面/斜面上, 呈任意角度, zxing 的 try_rotate
+    只覆盖 90° 倍数, 这里补充 45° 等中间角度的显式旋转。
+    """
+    g = np.asarray(gray)
+    if g.ndim == 3:
+        g = cv2.cvtColor(g, cv2.COLOR_BGR2GRAY)
+    h, w = g.shape[:2]
+    for ang in (45.0, -45.0, 135.0, -135.0):
+        M = cv2.getRotationMatrix2D((w / 2, h / 2), ang, 1.0)
+        rot = cv2.warpAffine(g, M, (w, h), flags=cv2.INTER_CUBIC,
+                             borderMode=cv2.BORDER_REPLICATE)
+        r = _try_zxing_matrix(rot)
+        if r and r.ok:
+            return r
+    return None
+
+
+def _decode_matrix(gray: np.ndarray) -> Optional[DecodeResult]:
+    """2D 矩阵码完整解码入口(先直接解, 再旋转扫描)。"""
+    r = _try_zxing_matrix(gray)
+    if r and r.ok:
+        return r
+    return _try_2d_rotated(gray)
 
 
 def decode_proposal(gray: np.ndarray, box, scale: float) -> Optional[DecodeResult]:
@@ -562,6 +643,21 @@ def decode_proposal(gray: np.ndarray, box, scale: float) -> Optional[DecodeResul
 def recognize_barcode(gray: np.ndarray, debug: bool = False) -> RecognizeResult:
     t0 = time.perf_counter()
     h, w = gray.shape[:2]
+
+    # 先尝试 2D 矩阵码(Data Matrix / QR / Aztec 等)。
+    # 砂轮标签/钢印上的码多为 2D 码, 而结构张量定位 + EAN-13 扫描线
+    # 只针对一维条码, 对 2D 码必然失效, 因此 2D 路径需优先执行。
+    mat = _decode_matrix(gray)
+    if mat and mat.ok:
+        return RecognizeResult(
+            text=mat.text, ok=True, checksum_ok=mat.checksum_ok,
+            confidence=mat.confidence,
+            bbox=[0.0, 0.0, float(w), float(h)],
+            decode_method=mat.method,
+            elapsed_ms=(time.perf_counter() - t0) * 1000.0,
+            num_candidates=0,
+        )
+
     proposals, scale, dbg = locate_barcode_proposals(gray)
 
     candidates = []
@@ -724,14 +820,14 @@ def main():
 
     print("=" * 70)
     print("  砂轮条形码识别 — 基于模式识别方法")
-    print("  技术路线: 结构张量定位 + Hough倾角矫正 + EAN-13扫描线解码")
+    print("  技术路线: 结构张量定位 + EAN-13扫描线 + 2D矩阵码(Data Matrix/QR)")
     print("=" * 70)
     print()
 
     if args.image:
         image_paths = [Path(args.image)]
     else:
-        image_paths = sorted(RAW_DIR.glob("*.bmp")) + sorted(RAW_DIR.glob("*.jpg"))
+        image_paths = sorted(RAW_DIR.glob("*.bmp")) + sorted(RAW_DIR.glob("*.jpg")) + sorted(RAW_DIR.glob("*.png"))
         image_paths = sorted(set(image_paths))
 
     if not image_paths:
