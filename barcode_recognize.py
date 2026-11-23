@@ -506,10 +506,16 @@ def _try_zxing(gray: np.ndarray) -> Optional[DecodeResult]:
     g = np.asarray(gray)
     if g.ndim == 3:
         g = cv2.cvtColor(g, cv2.COLOR_BGR2GRAY)
+    h, w = g.shape[:2]
+    # 低分辨率条码需放大到足够宽度才能解码: 目标最小宽度 800px, 上限 4x
+    scales = sorted({1.0, 2.0, 3.0, min(4.0, max(2.0, 800.0 / max(1, w)))})
     for v in (g, cv2.bitwise_not(g)):
-        for scale in (1.0, 2.0):
-            img = cv2.resize(v, None, fx=scale, fy=scale,
-                             interpolation=cv2.INTER_CUBIC) if scale > 1 else v
+        for scale in scales:
+            if scale > 1.0:
+                img = cv2.resize(v, None, fx=scale, fy=scale,
+                                 interpolation=cv2.INTER_LANCZOS4)
+            else:
+                img = v
             try:
                 results = zxingcpp.read_barcodes(
                     img, try_harder=True, try_rotate=True,

@@ -14,11 +14,15 @@
   python main.py --epochs 50 --size 224   # 自定义参数
   python main.py --eval-only              # 仅评估已训练模型
   python main.py --infer data/raw/RegulaImg.bmp  # 单张推理
+  python main.py --infer-dir data/raw     # 批量推理目录下所有图片
 """
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import cv2
 import torch
@@ -28,7 +32,69 @@ from dataset import build_real_dataset
 from evaluate import evaluate, visualize_prediction
 from inference import infer_single
 from model import UNet
-from train import get_device, train 
+from train import get_device, train
+
+IMAGE_EXTS = {".bmp", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".webp"}
+
+
+def load_trained_model(device, base_ch: int):
+    """加载已训练的 U-Net, 返回 (model, train_size, ckpt); 模型不存在返回 (None, None, None)."""
+    model_path = MODEL_DIR / "unet_barcode.pt"
+    if not model_path.exists():
+        return None, None, None
+    model = UNet(in_ch=1, base_ch=base_ch, dropout=0.0).to(device)
+    ckpt = torch.load(str(model_path), map_location=device, weights_only=False)
+    model.load_state_dict(ckpt["model_state"])
+    model.eval()
+    train_size = ckpt.get("train_size", ckpt.get("args", {}).get("size", 384))
+    return model, train_size, ckpt
+
+
+def infer_directory(model, dir_path: Path, device, train_size: int,
+                    long_side: int, use_fallback: bool):
+    """对目录下所有图片推理, 逐张输出检测到的条码值 (真值未知时以解码成功为准)."""
+    files = sorted(p for p in dir_path.iterdir()
+                   if p.is_file() and p.suffix.lower() in IMAGE_EXTS)
+    if not files:
+        print(f"[警告] 目录中没有可识别的图片: {dir_path}")
+        return
+    print(f"目录: {dir_path} 共 {len(files)} 张图片")
+    print("-" * 60)
+    ok_count = 0
+    total_ms = 0.0
+    failed = []
+    codes: dict = {}
+    for p in files:
+        res = infer_single(model, p, device, train_size=train_size,
+                           long_side=long_side, use_fallback=use_fallback,
+                           gt_text=None)
+        elapsed_ms = res.get("elapsed_ms", 0.0)
+        total_ms += elapsed_ms
+        text = res.get("text") or ""
+        if text:
+            checksum = "校验通过" if res["checksum_ok"] else "校验未通过"
+        else:
+            checksum = "未解出"
+        method = res.get("method") or "-"
+        err = res.get("error")
+        mark = "✓" if res["ok"] else "✗"
+        print(f"  {mark} {p.name}: {text or '—'} "
+              f"({checksum}, {elapsed_ms:.0f}ms, {method})"
+              f"{f' [{err}]' if err else ''}")
+        if res["ok"]:
+            ok_count += 1
+            codes[text] = codes.get(text, 0) + 1
+        else:
+            failed.append(p.name)
+    print("-" * 60)
+    print(f"成功解码: {ok_count}/{len(files)}")
+    print(f"平均耗时: {total_ms / len(files):.0f} ms/张")
+    if codes:
+        print("检测到的条码值分布:")
+        for text, count in sorted(codes.items(), key=lambda kv: -kv[1]):
+            print(f"  {text}: {count} 张")
+    if failed:
+        print(f"未成功解码 ({len(failed)} 张): {', '.join(failed)}")
 
 
 def main():
@@ -66,6 +132,8 @@ def main():
                         help="仅评估已训练模型")
     parser.add_argument("--infer", type=str, default=None,
                         help="对单张图像推理")
+    parser.add_argument("--infer-dir", type=str, default=None,
+                        help="对指定目录下所有图片批量推理 (输出检测到的条码值)")
     args = parser.parse_args()
 
     print("=" * 60)
@@ -83,18 +151,30 @@ def main():
 
     use_fallback = not args.no_fallback
 
-    if args.infer:
-        model = UNet(in_ch=1, base_ch=args.base_ch, dropout=0.0).to(device)
-        model_path = MODEL_DIR / "unet_barcode.pt"
-        if not model_path.exists():
-            print(f"[错误] 模型文件不存在: {model_path}")
-            print("请先运行训练: python deep_model_UNet.py")
+    if args.infer_dir:
+        dir_path = Path(args.infer_dir)
+        if not dir_path.is_dir():
+            print(f"[错误] 目录不存在: {dir_path}")
             return
-        ckpt = torch.load(str(model_path), map_location=device, weights_only=False)
-        model.load_state_dict(ckpt["model_state"])
-        model.eval()
-        train_size = ckpt.get("train_size", ckpt.get("args", {}).get("size", 384))
-        print(f"已加载模型: {model_path} (epoch {ckpt['epoch']}, "
+        model, train_size, ckpt = load_trained_model(device, args.base_ch)
+        if model is None:
+            print(f"[错误] 模型文件不存在: {MODEL_DIR / 'unet_barcode.pt'}")
+            print("请先运行训练: python main.py")
+            return
+        print(f"已加载模型: {MODEL_DIR / 'unet_barcode.pt'} "
+              f"(epoch {ckpt['epoch']}, val_iou={ckpt['val_iou']:.4f}, "
+              f"train_size={train_size})\n")
+        infer_directory(model, dir_path, device, train_size,
+                        args.long_side, use_fallback)
+        return
+
+    if args.infer:
+        model, train_size, ckpt = load_trained_model(device, args.base_ch)
+        if model is None:
+            print(f"[错误] 模型文件不存在: {MODEL_DIR / 'unet_barcode.pt'}")
+            print("请先运行训练: python main.py")
+            return
+        print(f"已加载模型: {MODEL_DIR / 'unet_barcode.pt'} (epoch {ckpt['epoch']}, "
               f"val_iou={ckpt['val_iou']:.4f}, train_size={train_size})")
         img_path = Path(args.infer)
         res = infer_single(model, img_path, device, train_size=train_size,
@@ -118,16 +198,11 @@ def main():
         return
 
     if args.eval_only:
-        model = UNet(in_ch=1, base_ch=args.base_ch, dropout=0.0).to(device)
-        model_path = MODEL_DIR / "unet_barcode.pt"
-        if not model_path.exists():
-            print(f"[错误] 模型文件不存在: {model_path}")
+        model, train_size, ckpt = load_trained_model(device, args.base_ch)
+        if model is None:
+            print(f"[错误] 模型文件不存在: {MODEL_DIR / 'unet_barcode.pt'}")
             return
-        ckpt = torch.load(str(model_path), map_location=device, weights_only=False)
-        model.load_state_dict(ckpt["model_state"])
-        model.eval()
-        train_size = ckpt.get("train_size", ckpt.get("args", {}).get("size", 384))
-        print(f"已加载模型: {model_path}, train_size={train_size}")
+        print(f"已加载模型: {MODEL_DIR / 'unet_barcode.pt'}, train_size={train_size}")
         evaluate(model, device, train_size=train_size,
                  long_side=args.long_side, use_fallback=use_fallback)
         return
@@ -135,11 +210,10 @@ def main():
     train(args)
 
     print("\n训练完成，正在评估...")
-    model = UNet(in_ch=1, base_ch=args.base_ch, dropout=0.0).to(device)
-    ckpt = torch.load(str(MODEL_DIR / "unet_barcode.pt"),
-                      map_location=device, weights_only=False)
-    model.load_state_dict(ckpt["model_state"])
-    model.eval()
-    train_size = ckpt.get("train_size", ckpt.get("args", {}).get("size", 384))
+    model, train_size, ckpt = load_trained_model(device, args.base_ch)
     evaluate(model, device, train_size=train_size,
              long_side=args.long_side, use_fallback=use_fallback)
+
+
+if __name__ == "__main__":
+    main()

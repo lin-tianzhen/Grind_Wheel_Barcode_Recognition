@@ -1,12 +1,16 @@
 """项目路径、全局常量与通用工具."""
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import cv2
 import numpy as np
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 SYNTH_DIR = PROJECT_ROOT / "data" / "synthetic"
 REAL_DIR = PROJECT_ROOT / "data" / "real_synth"
 RAW_DIR = PROJECT_ROOT / "data" / "raw"

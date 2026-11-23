@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
+from typing import Optional
 
 import cv2
 import numpy as np
@@ -12,6 +13,8 @@ import torch.nn.functional as F
 from config import GT_TEXT, imread_unicode
 from decode import decode_barcode_crop, valid_ean13
 from train import get_device
+
+_FALLBACK_WARNED = False
 
 
 def _pad_to_grid(image: np.ndarray, window: int, stride: int):
@@ -74,15 +77,6 @@ def sliding_window_infer(model, image: np.ndarray,
     return prob_map[:h0, :w0]
 
 
-def _vertical_edge_ratio(crop: np.ndarray) -> float:
-    """矫正后的条码应以水平方向梯度为主."""
-    g = cv2.GaussianBlur(crop, (3, 3), 0)
-    gx = np.abs(cv2.Sobel(g, cv2.CV_32F, 1, 0, ksize=3))
-    gy = np.abs(cv2.Sobel(g, cv2.CV_32F, 0, 1, ksize=3))
-    ex, ey = float(gx.mean()), float(gy.mean())
-    return ex / (ex + ey + 1e-6)
-
-
 def extract_candidates(prob_map: np.ndarray, threshold: float = 0.40,
                        max_keep: int = 3) -> list:
     """从概率图提取候选旋转矩形, 剔除面积/长宽比不合理的区域."""
@@ -93,10 +87,10 @@ def extract_candidates(prob_map: np.ndarray, threshold: float = 0.40,
     for i in range(1, num):
         x, y, bw, bh, area = stats[i]
         ratio = area / float(H * W)
-        if ratio < 0.0004 or ratio > 0.60:
+        if ratio < 0.0004 or ratio > 0.98:
             continue
         ar = max(bw, bh) / max(1, min(bw, bh))
-        if not (1.1 <= ar <= 14.0):
+        if ar > 14.0:
             continue
         comp = (labels[y:y + bh, x:x + bw] == i).astype(np.uint8)
         contours, _ = cv2.findContours(comp, cv2.RETR_EXTERNAL,
@@ -170,11 +164,15 @@ def perspective_correct(image: np.ndarray, box: np.ndarray) -> np.ndarray:
 def infer_single(model, image_path: Path, device: torch.device = None,
                  window: int = 384, stride: int = 256,
                  train_size: int = 384, long_side: int = 1280,
-                 use_fallback: bool = True) -> dict:
+                 use_fallback: bool = True,
+                 gt_text: Optional[str] = GT_TEXT) -> dict:
     """端到端推理: 缩放图粗定位 → 候选框 → 全分辨率透视矫正 → 解码.
 
     关键点: 定位在缩放图上做 (快), 解码在全分辨率原图上做 (清晰),
     避免把小条码缩到无法解码的分辨率.
+
+    gt_text: 期望条码值; 传 None 时只要解出且校验通过即视为成功,
+             适用于真值未知的批量目录推理.
     """
     t0 = time.perf_counter()
     result = {"ok": False, "text": "", "bbox": None, "elapsed_ms": 0.0,
@@ -199,22 +197,20 @@ def infer_single(model, image_path: Path, device: torch.device = None,
 
     text = None
     bbox = None
-    for cand_i,cand in enumerate(extract_candidates(prob_map)):
+    for cand in extract_candidates(prob_map):
         box_full = np.asarray(cand["box"], dtype=np.float32) / scale
         warped = perspective_correct(img, box_full)
         wh, ww = warped.shape[:2]
-        if ww < 150 or wh < 40:
-            continue
-        if ww / max(1, wh) < 1.3:
+        if max(ww, wh) < 120 or min(ww, wh) < 40:
             continue
         if max(warped.shape) > 1400:
             k = 1400 / float(max(warped.shape))
             warped = cv2.resize(warped, None, fx=k, fy=k,
                                 interpolation=cv2.INTER_AREA)
-        text = decode_barcode_crop(warped, use_zxing=(cand_i == 0))
+        text = decode_barcode_crop(warped)
         if text is None:
             for k_rot in (1, 2, 3):
-                text = decode_barcode_crop(np.rot90(warped, k_rot).copy(), use_zxing=False)
+                text = decode_barcode_crop(np.rot90(warped, k_rot).copy())
                 if text:
                     break
         if text:
@@ -229,13 +225,16 @@ def infer_single(model, image_path: Path, device: torch.device = None,
             if res.ok:
                 text = res.text
                 b = getattr(res, "bbox", None)
-                bbox = [float(v) for v in b] if b is not None else None
+                bbox = [float(v) for v in b] if b else None
                 result["method"] = "classical"
-        except Exception:
-            pass
+        except Exception as exc:
+            global _FALLBACK_WARNED
+            if not _FALLBACK_WARNED:
+                print(f"[警告] 传统方法兜底不可用: {exc}")
+                _FALLBACK_WARNED = True
 
     result["text"] = text or ""
-    result["ok"] = bool(text) and text == GT_TEXT
+    result["ok"] = bool(text) and (gt_text is None or text == gt_text)
     result["checksum_ok"] = valid_ean13(text) if text else False
     result["bbox"] = bbox
     result["elapsed_ms"] = (time.perf_counter() - t0) * 1000

@@ -39,6 +39,46 @@ def _hamming(a: str, b: str) -> int:
     return sum(x != y for x, y in zip(a, b))
 
 
+def estimate_bar_angle(gray: np.ndarray) -> float:
+    """用 Hough 竖直线估计条码条柱倾角 (度), 用于倾斜矫正."""
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(6, 6))
+    g = cv2.GaussianBlur(clahe.apply(gray), (3, 3), 0)
+    edges = cv2.Canny(g, 40, 130, apertureSize=3)
+    h, w = edges.shape[:2]
+    min_len = max(12, int(0.12 * max(h, w)))
+    lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=25,
+                            minLineLength=min_len, maxLineGap=6)
+    if lines is None:
+        return 0.0
+    angles = []
+    for x1, y1, x2, y2 in lines[:, 0]:
+        dx, dy = x2 - x1, y2 - y1
+        if abs(dy) < 0.6 * max(1, abs(dx)):
+            continue
+        ang = float(np.degrees(np.arctan2(dy, dx)))
+        if ang < -90:
+            ang += 180
+        tilt = ang - 90 if ang > 0 else ang + 90
+        if abs(tilt) <= 45:
+            angles.append(tilt)
+    if not angles:
+        return 0.0
+    return float(np.median(angles))
+
+
+def rotate_keep_size(img: np.ndarray, angle: float) -> np.ndarray:
+    """旋转并保留全部内容 (画布自动扩大)."""
+    h, w = img.shape[:2]
+    M = cv2.getRotationMatrix2D((w / 2 - 0.5, h / 2 - 0.5), angle, 1.0)
+    cos_a, sin_a = abs(M[0, 0]), abs(M[0, 1])
+    nw = int(h * sin_a + w * cos_a)
+    nh = int(h * cos_a + w * sin_a)
+    M[0, 2] += nw / 2 - w / 2
+    M[1, 2] += nh / 2 - h / 2
+    return cv2.warpAffine(img, M, (nw, nh), flags=cv2.INTER_CUBIC,
+                          borderMode=cv2.BORDER_REPLICATE)
+
+
 def _decode_95_bits(bits: str) -> Optional[tuple]:
     if len(bits) != 95:
         return None
@@ -192,8 +232,8 @@ def _zxing_decode(gray: np.ndarray) -> Optional[str]:
     return None
 
 
-def decode_barcode_crop(gray: np.ndarray,use_zxing: bool = True) -> Optional[str]:
-    """条码小图解码: 自研扫描线解码 → 反色 → zxing 兜底."""
+def decode_barcode_crop(gray: np.ndarray, use_zxing: bool = True) -> Optional[str]:
+    """条码小图解码: 扫描线解码 → 倾斜矫正 → 反色 → zxing 兜底."""
     g = np.asarray(gray)
     if g.ndim == 3:
         g = cv2.cvtColor(g, cv2.COLOR_BGR2GRAY)
@@ -203,4 +243,15 @@ def decode_barcode_crop(gray: np.ndarray,use_zxing: bool = True) -> Optional[str
         text = decode_ean13(v)
         if text:
             return text
+    angle = estimate_bar_angle(g)
+    if abs(angle) > 2.0:
+        rot = rotate_keep_size(g, angle)
+        for v in (rot, cv2.bitwise_not(rot)):
+            text = decode_ean13(v)
+            if text:
+                return text
+        if use_zxing:
+            text = _zxing_decode(rot)
+            if text:
+                return text
     return _zxing_decode(g) if use_zxing else None
