@@ -9,10 +9,10 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
-from .config import MODEL_DIR, REAL_DIR, SYNTH_DIR
-from .dataset import BarcodeDataset
-from .losses import CombinedLoss
-from .model import UNet
+from config import MODEL_DIR, REAL_DIR, SYNTH_DIR
+from dataset import BarcodeDataset
+from losses import CombinedLoss
+from model import UNet
 
 
 def get_device() -> torch.device:

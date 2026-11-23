@@ -10,10 +10,10 @@
   config / model / losses / dataset / train / decode / inference / evaluate / main
 
 用法:
-  python deep_model_UNet.py                          # 训练 (默认200 epochs)
-  python deep_model_UNet.py --epochs 50 --size 224   # 自定义参数
-  python deep_model_UNet.py --eval-only              # 仅评估已训练模型
-  python deep_model_UNet.py --infer data/raw/RegulaImg.bmp  # 单张推理
+  python main.py                          # 训练 (默认200 epochs)
+  python main.py --epochs 50 --size 224   # 自定义参数
+  python main.py --eval-only              # 仅评估已训练模型
+  python main.py --infer data/raw/RegulaImg.bmp  # 单张推理
 """
 from __future__ import annotations
 
@@ -23,12 +23,12 @@ from pathlib import Path
 import cv2
 import torch
 
-from .config import MODEL_DIR, OUTPUT_DIR, imread_unicode
-from .dataset import build_real_dataset
-from .evaluate import evaluate, visualize_prediction
-from .inference import infer_single
-from .model import UNet
-from .train import get_device, train
+from config import MODEL_DIR, OUTPUT_DIR, imread_unicode
+from dataset import build_real_dataset
+from evaluate import evaluate, visualize_prediction
+from inference import infer_single
+from model import UNet
+from train import get_device, train 
 
 
 def main():

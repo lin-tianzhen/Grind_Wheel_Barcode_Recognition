@@ -9,9 +9,9 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from .config import GT_TEXT, imread_unicode
-from .decode import decode_barcode_crop, valid_ean13
-from .train import get_device
+from config import GT_TEXT, imread_unicode
+from decode import decode_barcode_crop, valid_ean13
+from train import get_device
 
 
 def _pad_to_grid(image: np.ndarray, window: int, stride: int):

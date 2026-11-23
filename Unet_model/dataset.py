@@ -10,7 +10,7 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-from .config import RAW_DIR, REAL_DIR, imread_unicode
+from config import RAW_DIR, REAL_DIR, imread_unicode
 
 
 class BarcodeDataset(Dataset):

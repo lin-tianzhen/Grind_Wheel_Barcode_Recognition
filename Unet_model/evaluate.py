@@ -7,11 +7,11 @@ import cv2
 import numpy as np
 from torch.utils.data import DataLoader
 
-from .config import RAW_DIR, REAL_DIR, SYNTH_DIR
-from .dataset import BarcodeDataset
-from .inference import infer_single
-from .losses import CombinedLoss
-from .train import get_device, validate
+from config import RAW_DIR, REAL_DIR, SYNTH_DIR
+from dataset import BarcodeDataset
+from inference import infer_single
+from losses import CombinedLoss
+from train import get_device, validate
 
 
 def evaluate(model, device: torch.device = None, train_size: int = 384,
