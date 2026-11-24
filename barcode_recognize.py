@@ -532,7 +532,7 @@ def _try_zxing(gray: np.ndarray) -> Optional[DecodeResult]:
     return None
 
 
-# 2D 矩阵码格式集合: 工业零件上常见 Data Matrix / QR / Aztec / PDF417 / MaxiCode
+# 2D 矩阵码格式集合
 def _matrix_formats():
     import zxingcpp
     return (
